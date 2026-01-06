@@ -1,4 +1,4 @@
-# ALLOCON - Project Management System
+# ALLOCON - Project Management System and Task Allocation
 
 A production-ready, responsive project management and documentation website with role-based permissions, Supabase backend, and team task control.
 
