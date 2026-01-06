@@ -47,3 +47,15 @@ export interface ActivityLog {
   details: string
   created_at: string
 }
+
+export interface Resource {
+  id: string
+  title: string
+  description?: string
+  file_name: string
+  file_path: string
+  file_type: string
+  file_size?: number
+  uploaded_by: string
+  created_at: string
+}

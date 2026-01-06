@@ -5,6 +5,7 @@ import { supabase, Task, User, Milestone } from '@/lib/supabase'
 import { useAuthStore } from '@/lib/store'
 import Modal from '@/components/Modal'
 import StatusBadge from '@/components/StatusBadge'
+import AIChatbot from '@/components/AIChatbot'
 import { FiPlus, FiCheckSquare, FiCalendar, FiUser } from 'react-icons/fi'
 
 export default function TasksPage() {
@@ -383,6 +384,9 @@ export default function TasksPage() {
           </button>
         </form>
       </Modal>
+
+      {/* AI Chatbot */}
+      <AIChatbot />
     </div>
   )
 }
