@@ -1,4 +1,4 @@
-# ChatBot RBAC - Project Management System
+# ALLOCON - Project Management System
 
 A production-ready, responsive project management and documentation website with role-based permissions, Supabase backend, and team task control.
 
@@ -7,6 +7,8 @@ A production-ready, responsive project management and documentation website with
 ### Core Functionality
 - **Role-Based Access Control (RBAC)**: Team Lead and Member roles with distinct permissions
 - **Project Management**: Milestones, tasks, and team management
+- **Resources Storage**: Upload, preview, download, and delete via Supabase Storage
+- **AI Assistant**: Floating chat on Tasks page for help and tips
 - **Real-time Updates**: Powered by Supabase
 - **Activity Tracking**: Comprehensive activity logs for Team Leads
 - **Responsive Design**: Works seamlessly on all devices
@@ -52,12 +54,17 @@ A production-ready, responsive project management and documentation website with
   - Read-only access
 
 #### 6. Resources & Downloads
-- Project documentation
-- System architecture diagrams
-- API reference
-- User guides
+- Upload project files (Team Lead)
+- Preview supported files (images, PDFs)
+- Download for all users
+- Delete (Team Lead)
 
-#### 7. Activity Log (Team Lead Only)
+#### 7. AI Chat (Tasks Page)
+- Floating chat widget on Tasks
+- Uses OpenRouter model `deepseek/deepseek-r1-0528:free`
+- Helps with task management, planning, and productivity tips
+
+#### 8. Activity Log (Team Lead Only)
 - Track all project activities
 - Task assignments and status changes
 - Member additions and updates
@@ -94,7 +101,8 @@ A production-ready, responsive project management and documentation website with
 - **Frontend**: Next.js 14 with TypeScript
 - **Styling**: Tailwind CSS
 - **Backend**: Supabase (PostgreSQL)
-- **Authentication**: Supabase Auth
+- **Authentication**: Supabase Auth (email/password)
+- **AI**: OpenRouter (DeepSeek R1)
 - **State Management**: Zustand
 - **Icons**: React Icons
 
@@ -134,6 +142,8 @@ Create a `.env.local` file in the root directory:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+# Storage bucket name (default used in this project)
+NEXT_PUBLIC_SUPABASE_BUCKET=resource
 ```
 
 Replace the values with your actual Supabase credentials.
@@ -145,6 +155,12 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+### Step 5: Storage Bucket Setup (once)
+
+- Create a public bucket in Supabase Storage (we use `resource`)
+- Ensure storage policies allow: read for all, insert/update/delete for team lead
+- See the full guide in `SUPABASE_STORAGE_SETUP.md`
 
 ## 🚀 Getting Started
 
@@ -218,6 +234,19 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 - created_at: TIMESTAMP
 ```
 
+### Resources Table
+```sql
+- id: UUID
+- title: TEXT
+- description: TEXT (nullable)
+- file_name: TEXT
+- file_path: TEXT
+- file_type: TEXT
+- file_size: INTEGER (nullable)
+- uploaded_by: UUID (references users)
+- created_at: TIMESTAMP
+```
+
 ## 🔒 Security Features
 
 - **Row Level Security (RLS)**: Enabled on all tables
@@ -225,6 +254,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 - **Role-based Policies**: Database-level permission enforcement
 - **Status-based Access**: Inactive users cannot access the system
 - **Activity Tracking**: All critical actions are logged
+- **Idempotent Policies**: `supabase-schema.sql` safely creates policies only if missing (re-runnable)
 
 ## 🎨 UI/UX Features
 
@@ -256,12 +286,14 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ├── components/
 │   ├── Modal.tsx             # Reusable modal
 │   ├── Sidebar.tsx           # Navigation sidebar
+│   ├── AIChatbot.tsx         # Floating AI assistant (Tasks page)
 │   ├── StatCard.tsx          # Stat display card
 │   └── StatusBadge.tsx       # Task status badge
 ├── lib/
 │   ├── store.ts              # Zustand state management
 │   └── supabase.ts           # Supabase client & types
-├── supabase-schema.sql       # Database schema
+├── supabase-schema.sql       # Database schema (with idempotent RLS policies)
+├── SUPABASE_STORAGE_SETUP.md # Storage setup guide
 ├── package.json
 └── README.md
 ```
@@ -276,6 +308,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 4. Add environment variables:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `NEXT_PUBLIC_SUPABASE_BUCKET`
 5. Deploy!
 
 ### Environment Variables for Production
@@ -292,19 +325,32 @@ Make sure to set the same environment variables in your deployment platform as y
 - Verify that Row Level Security policies are created
 - Check that your user role is set correctly in the database
 
+### Storage Upload Fails
+- Ensure the bucket exists per `NEXT_PUBLIC_SUPABASE_BUCKET`
+- Bucket should be Public
+- Confirm storage policies allow Team Lead to insert/delete
+
+### Preview Doesn’t Open
+- Only previewable types (images, PDFs) open in a new tab
+- Use Download for other file types
+
 ### Tasks not showing for members
 - Members only see tasks assigned to them
 - Check the `assigned_to` field matches the user's ID
 
 ## 📝 Future Enhancements
 
-- File upload functionality for resources
 - Real-time notifications
 - Task comments and discussions
 - Advanced analytics and reporting
 - Email notifications
 - Calendar integration
 - Export functionality (PDF, CSV)
+
+## 🤖 AI Chatbot Notes
+
+- The chatbot on the Tasks page uses OpenRouter with model `deepseek/deepseek-r1-0528:free`.
+- Configuration lives in `components/AIChatbot.tsx`. For production, prefer using an environment variable for the API key rather than hardcoding.
 
 ## 📄 License
 
@@ -316,7 +362,7 @@ Contributions, issues, and feature requests are welcome!
 
 ## 👤 Author
 
-Created for the ChatBot RBAC project management system.
+Created for the ALLOCON project management system.
 
 ---
 

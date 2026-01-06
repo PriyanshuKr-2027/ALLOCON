@@ -13,7 +13,7 @@ npm install
 1. Go to [supabase.com](https://supabase.com) and sign in
 2. Click "New Project"
 3. Fill in project details:
-   - Name: ChatBot RBAC
+   - Name: ALLOCON
    - Database Password: (choose a strong password)
    - Region: (choose closest to you)
 4. Wait for project creation

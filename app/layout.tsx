@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'ChatBot RBAC - Project Management',
+  title: 'ALLOCON - Project Management',
   description: 'Company Internal Chatbot with Role-Based Access Control',
 }
 

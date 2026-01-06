@@ -95,7 +95,7 @@ export default function LoginPage() {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-xl mb-4">
             <FiCheckSquare className="text-white text-3xl" />
           </div>
-          <h1 className="text-white text-3xl font-bold">ChatBot RBAC</h1>
+          <h1 className="text-white text-3xl font-bold">ALLOCON</h1>
           <p className="text-gray-400 mt-2">Company Internal Chatbot with Role-Based Access Control</p>
         </div>
 

@@ -78,10 +78,9 @@ export default function AIChatbot() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const response = await fetch('/api/ai-chat', {
         method: 'POST',
         headers: {
-          'Authorization': 'Bearer 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',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

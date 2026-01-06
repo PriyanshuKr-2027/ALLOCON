@@ -39,7 +39,7 @@ export default function Sidebar() {
             <FiCheckSquare className="text-white text-xl" />
           </div>
           <div>
-            <h1 className="text-white font-bold text-lg">ChatBot RBAC</h1>
+            <h1 className="text-white font-bold text-lg">ALLOCON</h1>
           </div>
         </div>
       </div>
