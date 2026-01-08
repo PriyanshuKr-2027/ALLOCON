@@ -61,7 +61,6 @@ A production-ready, responsive project management and documentation website with
 
 #### 7. AI Chat (Tasks Page)
 - Floating chat widget on Tasks
-- Uses OpenRouter model `deepseek/deepseek-r1-0528:free`
 - Helps with task management, planning, and productivity tips
 
 #### 8. Activity Log (Team Lead Only)
