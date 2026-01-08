@@ -1,68 +1,130 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase, Task, User, Milestone } from '@/lib/supabase'
+import { supabase, Task } from '@/lib/supabase'
 import { useAuthStore } from '@/lib/store'
 import Modal from '@/components/Modal'
 import StatusBadge from '@/components/StatusBadge'
 import AIChatbot from '@/components/AIChatbot'
-import { FiPlus, FiCheckSquare, FiCalendar, FiUser } from 'react-icons/fi'
+import { FiPlus, FiCheckSquare, FiCalendar, FiUsers, FiX } from 'react-icons/fi'
 
 export default function TasksPage() {
-  const { user } = useAuthStore()
+  const { user, activeOrgId, isTeamLeadInActiveOrg } = useAuthStore()
   const [tasks, setTasks] = useState<Task[]>([])
-  const [users, setUsers] = useState<User[]>([])
-  const [milestones, setMilestones] = useState<Milestone[]>([])
+  const [members, setMembers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false)
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [selectedMembers, setSelectedMembers] = useState<string[]>([])
+  const [taskAssignments, setTaskAssignments] = useState<Map<string, string[]>>(new Map())
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     milestone: '',
     module: '',
     deadline: '',
-    assigned_to: '',
   })
-
-  const isTeamLead = user?.role === 'team_lead'
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [activeOrgId])
 
   const fetchData = async () => {
-    const [tasksRes, usersRes, milestonesRes] = await Promise.all([
-      supabase.from('tasks').select('*').order('created_at', { ascending: false }),
-      supabase.from('users').select('*'),
-      supabase.from('milestones').select('*').order('order', { ascending: true }),
-    ])
+    if (!activeOrgId) {
+      setLoading(false)
+      return
+    }
 
-    setTasks(tasksRes.data || [])
-    setUsers(usersRes.data || [])
-    setMilestones(milestonesRes.data || [])
+    const { data: tasksData } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('org_id', activeOrgId)
+      .order('created_at', { ascending: false })
+
+    const { data: membersData } = await supabase
+      .from('organization_members')
+      .select('*')
+      .eq('org_id', activeOrgId)
+
+    // Fetch task assignments
+    const { data: assignmentsData } = await supabase
+      .from('task_assignments')
+      .select('*')
+
+    const assignmentMap = new Map<string, string[]>()
+    assignmentsData?.forEach(assignment => {
+      if (!assignmentMap.has(assignment.task_id)) {
+        assignmentMap.set(assignment.task_id, [])
+      }
+      assignmentMap.get(assignment.task_id)!.push(assignment.user_id)
+    })
+
+    setTasks(tasksData || [])
+    setMembers(membersData || [])
+    setTaskAssignments(assignmentMap)
     setLoading(false)
+  }
+
+  const handleAssignMembers = async () => {
+    if (!selectedTaskId) return
+
+    // Remove old assignments for this task
+    await supabase
+      .from('task_assignments')
+      .delete()
+      .eq('task_id', selectedTaskId)
+
+    // Add new assignments
+    if (selectedMembers.length > 0) {
+      const assignments = selectedMembers.map(memberId => ({
+        task_id: selectedTaskId,
+        user_id: memberId,
+      }))
+
+      const { error } = await supabase
+        .from('task_assignments')
+        .insert(assignments)
+
+      if (!error) {
+        await supabase.from('activity_logs').insert({
+          org_id: activeOrgId,
+          action: 'task_assigned',
+          user_id: user?.id,
+          user_name: user?.name || '',
+          details: `Assigned task to ${selectedMembers.length} member(s)`,
+        })
+
+        setIsAssignModalOpen(false)
+        setSelectedTaskId(null)
+        setSelectedMembers([])
+        fetchData()
+      }
+    }
   }
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!isTeamLeadInActiveOrg || !user?.id || !activeOrgId) return
 
     const { error } = await supabase.from('tasks').insert({
-      ...formData,
-      created_by: user?.id,
+      org_id: activeOrgId,
+      title: formData.title,
+      description: formData.description,
+      milestone: formData.milestone,
+      module: formData.module,
+      created_by: user.id,
       status: 'todo',
       deadline: formData.deadline || null,
-      assigned_to: formData.assigned_to || null,
     })
 
     if (!error) {
-      const assignedUser = users.find(u => u.id === formData.assigned_to)
       await supabase.from('activity_logs').insert({
+        org_id: activeOrgId,
         action: 'task_created',
-        user_id: user?.id,
-        user_name: user?.name || '',
-        details: `Created task "${formData.title}"${assignedUser ? ` and assigned to ${assignedUser.name}` : ''}`,
+        user_id: user.id,
+        user_name: user.name || '',
+        details: `Created task "${formData.title}"`,
       })
 
       setFormData({
@@ -71,34 +133,8 @@ export default function TasksPage() {
         milestone: '',
         module: '',
         deadline: '',
-        assigned_to: '',
       })
       setIsAddModalOpen(false)
-      fetchData()
-    }
-  }
-
-  const handleAssignTask = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!selectedTask) return
-
-    const { error } = await supabase
-      .from('tasks')
-      .update({ assigned_to: formData.assigned_to })
-      .eq('id', selectedTask.id)
-
-    if (!error) {
-      const assignedUser = users.find(u => u.id === formData.assigned_to)
-      await supabase.from('activity_logs').insert({
-        action: 'task_assigned',
-        user_id: user?.id,
-        user_name: user?.name || '',
-        details: `Assigned task "${selectedTask.title}" to ${assignedUser?.name}`,
-      })
-
-      setIsAssignModalOpen(false)
-      setSelectedTask(null)
       fetchData()
     }
   }
@@ -113,6 +149,7 @@ export default function TasksPage() {
 
     if (!error) {
       await supabase.from('activity_logs').insert({
+        org_id: activeOrgId,
         action: 'task_status_changed',
         user_id: user?.id,
         user_name: user?.name || '',
@@ -122,10 +159,6 @@ export default function TasksPage() {
       fetchData()
     }
   }
-
-  const displayTasks = isTeamLead 
-    ? tasks 
-    : tasks.filter(t => t.assigned_to === user?.id)
 
   if (loading) {
     return (
@@ -145,12 +178,12 @@ export default function TasksPage() {
         <div>
           <h1 className="text-white text-3xl font-bold mb-2">Tasks</h1>
           <p className="text-gray-400">
-            {isTeamLead 
+            {isTeamLeadInActiveOrg 
               ? 'Manage and assign tasks to team members'
               : 'View your assigned tasks'}
           </p>
         </div>
-        {isTeamLead && (
+        {isTeamLeadInActiveOrg && (
           <button
             onClick={() => setIsAddModalOpen(true)}
             className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-lg font-medium flex items-center space-x-2 transition-colors"
@@ -162,10 +195,11 @@ export default function TasksPage() {
       </div>
 
       {/* Tasks List */}
-      {displayTasks.length > 0 ? (
+      {tasks.length > 0 ? (
         <div className="space-y-4">
-          {displayTasks.map((task) => {
-            const assignedUser = users.find(u => u.id === task.assigned_to)
+          {tasks.map((task) => {
+            const assignedMembers = taskAssignments.get(task.id) || []
+            const assignedMemberDetails = members.filter(m => assignedMembers.includes(m.user_id))
             return (
               <div
                 key={task.id}
@@ -193,13 +227,21 @@ export default function TasksPage() {
                           <span>{new Date(task.deadline).toLocaleDateString()}</span>
                         </span>
                       )}
-                      {assignedUser && (
-                        <span className="text-gray-500 flex items-center space-x-1">
-                          <FiUser />
-                          <span>{assignedUser.name}</span>
-                        </span>
-                      )}
                     </div>
+
+                    {/* Assigned Members */}
+                    {assignedMemberDetails.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {assignedMemberDetails.map((member) => (
+                          <span
+                            key={member.id}
+                            className="inline-flex items-center space-x-1 bg-primary bg-opacity-20 text-primary text-xs px-2 py-1 rounded"
+                          >
+                            <span>👤 {member.user_id}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   
                   <div className="ml-4">
@@ -207,12 +249,12 @@ export default function TasksPage() {
                   </div>
                 </div>
 
-                {isTeamLead && (
+                {isTeamLeadInActiveOrg && (
                   <div className="flex space-x-2 border-t border-gray-700 pt-4">
                     <select
                       value={task.status}
                       onChange={(e) => handleStatusChange(task.id, e.target.value)}
-                      className="bg-dark-bg border border-gray-700 text-white px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-primary"
+                      className="flex-1 bg-dark-bg border border-gray-700 text-white px-4 py-2 rounded-lg text-sm focus:outline-none focus:border-primary"
                     >
                       <option value="todo">To Do</option>
                       <option value="in_progress">In Progress</option>
@@ -221,13 +263,14 @@ export default function TasksPage() {
 
                     <button
                       onClick={() => {
-                        setSelectedTask(task)
-                        setFormData({ ...formData, assigned_to: task.assigned_to || '' })
+                        setSelectedTaskId(task.id)
+                        setSelectedMembers(assignedMembers)
                         setIsAssignModalOpen(true)
                       }}
-                      className="bg-dark-bg border border-gray-700 text-white px-4 py-2 rounded-lg text-sm hover:border-primary transition-colors"
+                      className="bg-dark-bg border border-gray-700 text-white px-4 py-2 rounded-lg text-sm hover:border-primary transition-colors flex items-center space-x-2"
                     >
-                      {task.assigned_to ? 'Reassign' : 'Assign'}
+                      <FiUsers className="w-4 h-4" />
+                      <span>Assign ({assignedMembers.length})</span>
                     </button>
                   </div>
                 )}
@@ -242,11 +285,11 @@ export default function TasksPage() {
           </div>
           <h3 className="text-white text-xl font-bold mb-2">No Tasks</h3>
           <p className="text-gray-400 mb-6">
-            {isTeamLead 
+            {isTeamLeadInActiveOrg 
               ? 'Create your first task to get started.'
               : 'No tasks have been assigned to you yet.'}
           </p>
-          {isTeamLead && (
+          {isTeamLeadInActiveOrg && (
             <button
               onClick={() => setIsAddModalOpen(true)}
               className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-lg font-medium inline-flex items-center space-x-2"
@@ -262,11 +305,11 @@ export default function TasksPage() {
       <Modal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
-        title="Create New Task"
+        title="Add New Task"
       >
         <form onSubmit={handleAddTask} className="space-y-4">
           <div>
-            <label className="text-gray-400 text-sm mb-2 block">Title *</label>
+            <label className="text-gray-400 text-sm mb-2 block">Task Title</label>
             <input
               type="text"
               value={formData.title}
@@ -291,16 +334,13 @@ export default function TasksPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-gray-400 text-sm mb-2 block">Milestone</label>
-              <select
+              <input
+                type="text"
                 value={formData.milestone}
                 onChange={(e) => setFormData({ ...formData, milestone: e.target.value })}
                 className="w-full bg-dark-bg border border-gray-700 text-white px-4 py-3 rounded-lg focus:outline-none focus:border-primary"
-              >
-                <option value="">Select milestone</option>
-                {milestones.map(m => (
-                  <option key={m.id} value={m.title}>{m.title}</option>
-                ))}
-              </select>
+                placeholder="Select milestone"
+              />
             </div>
 
             <div>
@@ -315,30 +355,14 @@ export default function TasksPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-gray-400 text-sm mb-2 block">Assign To</label>
-              <select
-                value={formData.assigned_to}
-                onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
-                className="w-full bg-dark-bg border border-gray-700 text-white px-4 py-3 rounded-lg focus:outline-none focus:border-primary"
-              >
-                <option value="">Select member</option>
-                {users.filter(u => u.status === 'active').map(u => (
-                  <option key={u.id} value={u.id}>{u.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-gray-400 text-sm mb-2 block">Deadline</label>
-              <input
-                type="date"
-                value={formData.deadline}
-                onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
-                className="w-full bg-dark-bg border border-gray-700 text-white px-4 py-3 rounded-lg focus:outline-none focus:border-primary"
-              />
-            </div>
+          <div>
+            <label className="text-gray-400 text-sm mb-2 block">Deadline</label>
+            <input
+              type="date"
+              value={formData.deadline}
+              onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
+              className="w-full bg-dark-bg border border-gray-700 text-white px-4 py-3 rounded-lg focus:outline-none focus:border-primary"
+            />
           </div>
 
           <button
@@ -350,39 +374,80 @@ export default function TasksPage() {
         </form>
       </Modal>
 
-      {/* Assign Task Modal */}
+      {/* Assign Members Modal */}
       <Modal
         isOpen={isAssignModalOpen}
-        onClose={() => setIsAssignModalOpen(false)}
-        title="Assign Task"
+        onClose={() => {
+          setIsAssignModalOpen(false)
+          setSelectedTaskId(null)
+          setSelectedMembers([])
+        }}
+        title="Assign Members to Task"
       >
-        <form onSubmit={handleAssignTask} className="space-y-4">
-          <p className="text-gray-400 text-sm mb-4">
-            Assign task "{selectedTask?.title}" to a team member
+        <div className="space-y-4">
+          <p className="text-gray-400 text-sm">
+            Select team members to assign to this task. They can work together on it.
           </p>
 
-          <div>
-            <label className="text-gray-400 text-sm mb-2 block">Select Team Member</label>
-            <select
-              value={formData.assigned_to}
-              onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
-              className="w-full bg-dark-bg border border-gray-700 text-white px-4 py-3 rounded-lg focus:outline-none focus:border-primary"
-              required
-            >
-              <option value="">Select member</option>
-              {users.filter(u => u.status === 'active').map(u => (
-                <option key={u.id} value={u.id}>{u.name}</option>
-              ))}
-            </select>
+          <div className="max-h-64 overflow-y-auto space-y-2">
+            {members.length > 0 ? (
+              members.map((member) => (
+                <label
+                  key={member.id}
+                  className="flex items-center space-x-3 p-3 bg-dark-bg rounded-lg cursor-pointer hover:bg-dark-hover transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedMembers.includes(member.user_id)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedMembers([...selectedMembers, member.user_id])
+                      } else {
+                        setSelectedMembers(selectedMembers.filter(id => id !== member.user_id))
+                      }
+                    }}
+                    className="w-4 h-4 rounded bg-primary border-gray-600"
+                  />
+                  <div className="flex-1">
+                    <p className="text-white text-sm font-medium">Member {member.user_id.slice(0, 8)}</p>
+                    <p className="text-gray-500 text-xs">
+                      {member.role === 'team_lead' ? 'Team Lead' : 'Member'}
+                    </p>
+                  </div>
+                </label>
+              ))
+            ) : (
+              <p className="text-gray-500 text-sm text-center py-4">No members available</p>
+            )}
           </div>
 
-          <button
-            type="submit"
-            className="w-full bg-primary hover:bg-primary-dark text-white py-3 rounded-lg font-medium transition-colors"
-          >
-            Assign Task
-          </button>
-        </form>
+          {selectedMembers.length > 0 && (
+            <div className="bg-primary bg-opacity-10 border border-primary border-opacity-30 rounded-lg p-3">
+              <p className="text-primary text-sm">
+                ✓ {selectedMembers.length} member{selectedMembers.length > 1 ? 's' : ''} selected
+              </p>
+            </div>
+          )}
+
+          <div className="flex space-x-3">
+            <button
+              onClick={() => {
+                setIsAssignModalOpen(false)
+                setSelectedTaskId(null)
+                setSelectedMembers([])
+              }}
+              className="flex-1 bg-dark-bg border border-gray-700 text-white py-2 rounded-lg text-sm hover:border-gray-600 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAssignMembers}
+              className="flex-1 bg-primary hover:bg-primary-dark text-white py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              Assign Members
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* AI Chatbot */}

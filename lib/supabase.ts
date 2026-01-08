@@ -13,26 +13,49 @@ export interface User {
   id: string
   name: string
   email: string
-  role: UserRole
   status: UserStatus
   created_at: string
 }
 
+export interface Organization {
+  id: string
+  name: string
+  description?: string
+  created_by: string
+  created_at: string
+}
+
+export interface OrganizationMember {
+  id: string
+  user_id: string
+  org_id: string
+  role: UserRole
+  joined_at: string
+}
+
 export interface Task {
   id: string
+  org_id: string
   title: string
   description: string
   milestone?: string
   module?: string
   status: TaskStatus
   deadline?: string
-  assigned_to?: string
   created_by: string
   created_at: string
 }
 
+export interface TaskAssignment {
+  id: string
+  task_id: string
+  user_id: string
+  assigned_at: string
+}
+
 export interface Milestone {
   id: string
+  org_id: string
   title: string
   duration: string
   description: string
@@ -41,6 +64,7 @@ export interface Milestone {
 
 export interface ActivityLog {
   id: string
+  org_id: string
   action: string
   user_id: string
   user_name: string
@@ -50,6 +74,7 @@ export interface ActivityLog {
 
 export interface Resource {
   id: string
+  org_id: string
   title: string
   description?: string
   file_name: string

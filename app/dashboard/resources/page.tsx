@@ -7,7 +7,7 @@ import Modal from '@/components/Modal'
 import { FiFileText, FiDownload, FiEye, FiImage, FiFile, FiPlus, FiTrash2, FiUpload } from 'react-icons/fi'
 
 export default function ResourcesPage() {
-  const { user } = useAuthStore()
+  const { user, activeOrgId, isTeamLeadInActiveOrg } = useAuthStore()
   const bucketName = process.env.NEXT_PUBLIC_SUPABASE_BUCKET || 'resources'
   const [resources, setResources] = useState<Resource[]>([])
   const [loading, setLoading] = useState(true)
@@ -19,16 +19,15 @@ export default function ResourcesPage() {
   })
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
 
-  const isTeamLead = user?.role === 'team_lead'
-
   useEffect(() => {
     fetchResources()
-  }, [])
+  }, [activeOrgId])
 
   const fetchResources = async () => {
     const { data, error } = await supabase
       .from('resources')
       .select('*')
+      .eq('org_id', activeOrgId)
       .order('created_at', { ascending: false })
 
     if (!error && data) {
@@ -45,7 +44,7 @@ export default function ResourcesPage() {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedFile || !user) return
+    if (!selectedFile || !user || !isTeamLeadInActiveOrg || !activeOrgId) return
 
     setUploading(true)
 
@@ -68,6 +67,7 @@ export default function ResourcesPage() {
 
       // Save resource metadata to database
       const { error: dbError } = await supabase.from('resources').insert({
+        org_id: activeOrgId,
         title: formData.title,
         description: formData.description,
         file_name: selectedFile.name,
@@ -81,6 +81,7 @@ export default function ResourcesPage() {
 
       // Log activity
       await supabase.from('activity_logs').insert({
+        org_id: activeOrgId,
         action: 'resource_uploaded',
         user_id: user.id,
         user_name: user.name,
@@ -150,6 +151,7 @@ export default function ResourcesPage() {
 
     if (!dbError) {
       await supabase.from('activity_logs').insert({
+        org_id: activeOrgId,
         action: 'resource_deleted',
         user_id: user?.id,
         user_name: user?.name || '',
@@ -191,7 +193,7 @@ export default function ResourcesPage() {
           <h1 className="text-white text-3xl font-bold mb-2">Resources & Downloads</h1>
           <p className="text-gray-400">Project documentation, diagrams, and reference materials</p>
         </div>
-        {isTeamLead && (
+        {isTeamLeadInActiveOrg && (
           <button
             onClick={() => setIsUploadModalOpen(true)}
             className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-lg font-medium flex items-center space-x-2 transition-colors"
@@ -238,7 +240,7 @@ export default function ResourcesPage() {
                     <FiEye />
                     <span>Preview</span>
                   </button>
-                  {isTeamLead && (
+                  {isTeamLeadInActiveOrg && (
                     <button
                       onClick={() => handleDelete(resource)}
                       className="bg-dark-bg border border-gray-700 text-red-500 px-3 py-2 rounded-lg text-sm hover:border-red-500 transition-colors"
@@ -258,11 +260,11 @@ export default function ResourcesPage() {
           </div>
           <h3 className="text-white text-xl font-bold mb-2">No Resources Yet</h3>
           <p className="text-gray-400 mb-6">
-            {isTeamLead 
+            {isTeamLeadInActiveOrg 
               ? 'Upload project files, documentation, and resources for your team.'
               : 'No resources have been uploaded yet.'}
           </p>
-          {isTeamLead && (
+          {isTeamLeadInActiveOrg && (
             <button
               onClick={() => setIsUploadModalOpen(true)}
               className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-lg font-medium inline-flex items-center space-x-2"

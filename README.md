@@ -15,7 +15,7 @@ A production-ready, responsive project management and documentation website with
 
 ### Pages & Features
 
-#### 1. Overview Page
+#### 1. Overview 
 - Project information and problem statement
 - Technology stack display
 - Real-time progress metrics

@@ -1,0 +1,16 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[context.production]
+  environment = { NODE_VERSION = "18" }
+
+[context.deploy-preview]
+  environment = { NODE_VERSION = "18" }
+
+[context.branch-deploy]
+  environment = { NODE_VERSION = "18" }
+
+# Use Next.js plugin if available (Netlify auto-detects for Next 14)
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

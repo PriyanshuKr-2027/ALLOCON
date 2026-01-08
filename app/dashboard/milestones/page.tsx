@@ -7,7 +7,7 @@ import Modal from '@/components/Modal'
 import { FiPlus, FiTarget } from 'react-icons/fi'
 
 export default function MilestonesPage() {
-  const { user } = useAuthStore()
+  const { user, activeOrgId, isTeamLeadInActiveOrg } = useAuthStore()
   const [milestones, setMilestones] = useState<Milestone[]>([])
   const [loading, setLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -17,16 +17,15 @@ export default function MilestonesPage() {
     description: '',
   })
 
-  const isTeamLead = user?.role === 'team_lead'
-
   useEffect(() => {
     fetchMilestones()
-  }, [])
+  }, [activeOrgId])
 
   const fetchMilestones = async () => {
     const { data } = await supabase
       .from('milestones')
       .select('*')
+      .eq('org_id', activeOrgId)
       .order('order', { ascending: true })
 
     setMilestones(data || [])
@@ -36,7 +35,10 @@ export default function MilestonesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    if (!isTeamLeadInActiveOrg) return
+
     const { error } = await supabase.from('milestones').insert({
+      org_id: activeOrgId,
       ...formData,
       order: milestones.length + 1,
     })
@@ -44,6 +46,7 @@ export default function MilestonesPage() {
     if (!error) {
       // Log activity
       await supabase.from('activity_logs').insert({
+        org_id: activeOrgId,
         action: 'milestone_created',
         user_id: user?.id,
         user_name: user?.name || '',
@@ -75,7 +78,7 @@ export default function MilestonesPage() {
           <h1 className="text-white text-3xl font-bold mb-2">Milestones & Modules</h1>
           <p className="text-gray-400">Project timeline and deliverables</p>
         </div>
-        {isTeamLead && (
+        {isTeamLeadInActiveOrg && (
           <button
             onClick={() => setIsModalOpen(true)}
             className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-lg font-medium flex items-center space-x-2 transition-colors"
@@ -118,7 +121,7 @@ export default function MilestonesPage() {
           <p className="text-gray-400 mb-6">
             Create your first milestone to start tracking project progress.
           </p>
-          {isTeamLead && (
+          {isTeamLeadInActiveOrg && (
             <button
               onClick={() => setIsModalOpen(true)}
               className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-lg font-medium inline-flex items-center space-x-2"

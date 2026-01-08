@@ -7,9 +7,9 @@ import StatCard from '@/components/StatCard'
 import { FiCheckSquare, FiCheck, FiClock, FiTrendingUp } from 'react-icons/fi'
 
 export default function DashboardStatsPage() {
-  const { user } = useAuthStore()
+  const { activeOrgId, isTeamLeadInActiveOrg } = useAuthStore()
   const [tasks, setTasks] = useState<Task[]>([])
-  const [users, setUsers] = useState<User[]>([])
+  const [members, setMembers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -17,36 +17,36 @@ export default function DashboardStatsPage() {
       const { data: tasksData } = await supabase
         .from('tasks')
         .select('*')
+        .eq('org_id', activeOrgId)
         .order('created_at', { ascending: false })
 
-      const { data: usersData } = await supabase
-        .from('users')
+      const { data: membersData } = await supabase
+        .from('organization_members')
         .select('*')
+        .eq('org_id', activeOrgId)
 
       setTasks(tasksData || [])
-      setUsers(usersData || [])
+      setMembers(membersData || [])
       setLoading(false)
     }
 
-    fetchData()
-  }, [])
+    if (activeOrgId) {
+      fetchData()
+    }
+  }, [activeOrgId])
 
   // Calculate stats
-  const isTeamLead = user?.role === 'team_lead'
-  const userTasks = isTeamLead 
-    ? tasks 
-    : tasks.filter(t => t.assigned_to === user?.id)
-
-  const totalTasks = userTasks.length
-  const completedTasks = userTasks.filter(t => t.status === 'completed').length
-  const inProgressTasks = userTasks.filter(t => t.status === 'in_progress').length
+  const totalTasks = tasks.length
+  const completedTasks = tasks.filter(t => t.status === 'completed').length
+  const inProgressTasks = tasks.filter(t => t.status === 'in_progress').length
   const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
 
-  // Task distribution by member
-  const memberDistribution = users.map(member => ({
-    name: member.name,
-    taskCount: tasks.filter(t => t.assigned_to === member.id).length,
-    completed: tasks.filter(t => t.assigned_to === member.id && t.status === 'completed').length,
+  // Task distribution by member (for team leads only)
+  // Note: Full task assignment tracking requires task_assignments table UI integration
+  const memberDistribution = members.map((member, idx) => ({
+    id: member.user_id,
+    role: member.role,
+    index: idx,
   }))
 
   if (loading) {
@@ -128,7 +128,7 @@ export default function DashboardStatsPage() {
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">To Do</span>
                 <span className="text-white font-medium">
-                  {userTasks.filter(t => t.status === 'todo').length}
+                  {tasks.filter(t => t.status === 'todo').length}
                 </span>
               </div>
               <div className="flex justify-between items-center">
@@ -149,50 +149,35 @@ export default function DashboardStatsPage() {
       </div>
 
       {/* Member Task Distribution - Team Lead Only */}
-      {isTeamLead && (
+      {isTeamLeadInActiveOrg && (
         <div className="bg-dark-card p-6 rounded-xl border border-gray-700 mt-8">
           <h2 className="text-white text-xl font-bold mb-4">Member Task Distribution</h2>
           {memberDistribution.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-700">
-                    <th className="text-left text-gray-400 py-3 px-4">Member</th>
-                    <th className="text-left text-gray-400 py-3 px-4">Total Tasks</th>
-                    <th className="text-left text-gray-400 py-3 px-4">Completed</th>
-                    <th className="text-left text-gray-400 py-3 px-4">Progress</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {memberDistribution.map((member, idx) => {
-                    const progress = member.taskCount > 0 
-                      ? Math.round((member.completed / member.taskCount) * 100) 
-                      : 0
-                    return (
-                      <tr key={idx} className="border-b border-gray-800">
-                        <td className="text-white py-3 px-4">{member.name}</td>
-                        <td className="text-gray-400 py-3 px-4">{member.taskCount}</td>
-                        <td className="text-gray-400 py-3 px-4">{member.completed}</td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center space-x-2">
-                            <div className="flex-1 bg-dark-bg rounded-full h-2">
-                              <div
-                                className="bg-primary h-2 rounded-full"
-                                style={{ width: `${progress}%` }}
-                              ></div>
-                            </div>
-                            <span className="text-gray-400 text-sm w-12">{progress}%</span>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+            <div className="space-y-3">
+              <p className="text-gray-400 text-sm mb-4">
+                {memberDistribution.length} member{memberDistribution.length > 1 ? 's' : ''} in organization
+              </p>
+              {memberDistribution.map((member) => (
+                <div
+                  key={member.id}
+                  className="flex items-center justify-between p-3 bg-dark-bg rounded-lg"
+                >
+                  <span className="text-gray-300 text-sm">
+                    Member {member.index + 1}
+                  </span>
+                  <span className={`text-xs px-2 py-1 rounded ${
+                    member.role === 'team_lead'
+                      ? 'bg-primary bg-opacity-20 text-primary'
+                      : 'bg-gray-700 bg-opacity-50 text-gray-400'
+                  }`}>
+                    {member.role === 'team_lead' ? 'Team Lead' : 'Member'}
+                  </span>
+                </div>
+              ))}
             </div>
           ) : (
             <div className="text-center py-12">
-              <p className="text-gray-500">No team member data available</p>
+              <p className="text-gray-500">No team members in this organization</p>
             </div>
           )}
         </div>

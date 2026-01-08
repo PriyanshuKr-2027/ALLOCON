@@ -8,7 +8,7 @@ import { FiTarget, FiCheckSquare, FiCheck, FiUsers } from 'react-icons/fi'
 import { SiReact, SiTypescript, SiTailwindcss } from 'react-icons/si'
 
 export default function OverviewPage() {
-  const { user } = useAuthStore()
+  const { user, activeOrgId } = useAuthStore()
   const [stats, setStats] = useState({
     totalMilestones: 0,
     totalTasks: 0,
@@ -22,32 +22,39 @@ export default function OverviewPage() {
   })
 
   useEffect(() => {
+    if (!activeOrgId) return
+
     const fetchStats = async () => {
-      // Fetch milestones count
+      // Fetch milestones count for this org
       const { count: milestonesCount } = await supabase
         .from('milestones')
         .select('*', { count: 'exact', head: true })
+        .eq('org_id', activeOrgId)
 
-      // Fetch tasks count
+      // Fetch tasks count for this org
       const { count: tasksCount } = await supabase
         .from('tasks')
         .select('*', { count: 'exact', head: true })
+        .eq('org_id', activeOrgId)
 
-      // Fetch completed tasks
+      // Fetch completed tasks for this org
       const { count: completedCount } = await supabase
         .from('tasks')
         .select('*', { count: 'exact', head: true })
+        .eq('org_id', activeOrgId)
         .eq('status', 'completed')
 
-      // Fetch members count
+      // Fetch members count for this org
       const { count: membersCount } = await supabase
-        .from('users')
+        .from('organization_members')
         .select('*', { count: 'exact', head: true })
+        .eq('org_id', activeOrgId)
 
-      // Fetch task status distribution
+      // Fetch task status distribution for this org
       const { data: allTasks } = await supabase
         .from('tasks')
         .select('status')
+        .eq('org_id', activeOrgId)
 
       const statusCounts = {
         completed: 0,
@@ -72,7 +79,7 @@ export default function OverviewPage() {
     }
 
     fetchStats()
-  }, [])
+  }, [activeOrgId])
 
   const completionPercentage = stats.totalTasks > 0 
     ? Math.round((stats.completedTasks / stats.totalTasks) * 100) 

@@ -1,57 +1,91 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase, User } from '@/lib/supabase'
+import { supabase, OrganizationMember } from '@/lib/supabase'
 import { useAuthStore } from '@/lib/store'
 import Modal from '@/components/Modal'
-import { FiPlus, FiUsers, FiToggleLeft, FiToggleRight } from 'react-icons/fi'
+import { FiUsers, FiTrash2, FiAlertTriangle } from 'react-icons/fi'
 
 export default function TeamPage() {
-  const { user } = useAuthStore()
-  const [members, setMembers] = useState<User[]>([])
-  const [activeTab, setActiveTab] = useState<'active' | 'inactive'>('active')
+  const { activeOrgId, isTeamLeadInActiveOrg, user } = useAuthStore()
+  const [members, setMembers] = useState<OrganizationMember[]>([])
+  const [users, setUsers] = useState<Map<string, any>>(new Map())
   const [loading, setLoading] = useState(true)
-  const [isModalOpen, setIsModalOpen] = useState(false)
-
-  const isTeamLead = user?.role === 'team_lead'
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [memberToDelete, setMemberToDelete] = useState<{ id: string; name: string } | null>(null)
 
   useEffect(() => {
-    fetchMembers()
-  }, [])
+    fetchTeamData()
+  }, [activeOrgId])
 
-  const fetchMembers = async () => {
-    const { data } = await supabase
-      .from('users')
+  const fetchTeamData = async () => {
+    if (!activeOrgId) {
+      setLoading(false)
+      return
+    }
+
+    // Fetch organization members
+    const { data: memberData } = await supabase
+      .from('organization_members')
       .select('*')
-      .order('created_at', { ascending: false })
+      .eq('org_id', activeOrgId)
+      .order('joined_at', { ascending: false })
 
-    setMembers(data || [])
+    // Fetch user details for all members
+    if (memberData && memberData.length > 0) {
+      const userIds = memberData.map(m => m.user_id)
+      const { data: userData } = await supabase
+        .from('users')
+        .select('*')
+        .in('id', userIds)
+
+      const userMap = new Map()
+      userData?.forEach(u => userMap.set(u.id, u))
+      setUsers(userMap)
+    }
+
+    setMembers(memberData || [])
     setLoading(false)
   }
 
-  const toggleMemberStatus = async (memberId: string, currentStatus: string) => {
-    const newStatus = currentStatus === 'active' ? 'inactive' : 'active'
+  const handleRemoveMember = async (userId: string, memberName: string) => {
+    if (!isTeamLeadInActiveOrg || !activeOrgId) return
 
-    const { error } = await supabase
-      .from('users')
-      .update({ status: newStatus })
-      .eq('id', memberId)
-
-    if (!error) {
-      // Log activity
-      const member = members.find(m => m.id === memberId)
-      await supabase.from('activity_logs').insert({
-        action: 'member_status_changed',
-        user_id: user?.id,
-        user_name: user?.name || '',
-        details: `Changed ${member?.name}'s status to ${newStatus}`,
-      })
-
-      fetchMembers()
-    }
+    setMemberToDelete({ id: userId, name: memberName })
+    setIsDeleteModalOpen(true)
   }
 
-  const filteredMembers = members.filter(m => m.status === activeTab)
+  const confirmRemoveMember = async () => {
+    if (!memberToDelete || !isTeamLeadInActiveOrg || !activeOrgId) return
+
+    // Delete member from organization
+    const { error } = await supabase
+      .from('organization_members')
+      .delete()
+      .eq('user_id', memberToDelete.id)
+      .eq('org_id', activeOrgId)
+
+    if (!error) {
+      // Also remove their task assignments
+      await supabase
+        .from('task_assignments')
+        .delete()
+        .eq('user_id', memberToDelete.id)
+
+      // Log activity
+      await supabase.from('activity_logs').insert({
+        org_id: activeOrgId,
+        action: 'member_removed',
+        user_id: user?.id,
+        user_name: user?.name || '',
+        details: `Removed member ${memberToDelete.name} from organization`,
+      })
+
+      setIsDeleteModalOpen(false)
+      setMemberToDelete(null)
+      fetchTeamData()
+    }
+  }
 
   if (loading) {
     return (
@@ -70,138 +104,110 @@ export default function TeamPage() {
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-white text-3xl font-bold mb-2">Team Members</h1>
-          <p className="text-gray-400">Manage your project team</p>
+          <p className="text-gray-400">Manage your organization members</p>
         </div>
-        {isTeamLead && (
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-lg font-medium flex items-center space-x-2 transition-colors"
-          >
-            <FiPlus />
-            <span>Add Member</span>
-          </button>
-        )}
-      </div>
-
-      {/* Tabs */}
-      <div className="flex space-x-4 mb-6 border-b border-gray-700">
-        <button
-          onClick={() => setActiveTab('active')}
-          className={`px-4 py-3 font-medium transition-colors ${
-            activeTab === 'active'
-              ? 'text-primary border-b-2 border-primary'
-              : 'text-gray-400 hover:text-white'
-          }`}
-        >
-          Active ({members.filter(m => m.status === 'active').length})
-        </button>
-        <button
-          onClick={() => setActiveTab('inactive')}
-          className={`px-4 py-3 font-medium transition-colors ${
-            activeTab === 'inactive'
-              ? 'text-primary border-b-2 border-primary'
-              : 'text-gray-400 hover:text-white'
-          }`}
-        >
-          Inactive ({members.filter(m => m.status === 'inactive').length})
-        </button>
       </div>
 
       {/* Members List */}
-      {filteredMembers.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredMembers.map((member) => (
-            <div
-              key={member.id}
-              className="bg-dark-card p-6 rounded-xl border border-gray-700 hover:border-primary transition-colors"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center space-x-3">
+      {members.length > 0 ? (
+        <div className="space-y-4">
+          {members.map((member) => {
+            const memberUser = users.get(member.user_id)
+            return (
+              <div
+                key={member.id}
+                className="bg-dark-card p-6 rounded-xl border border-gray-700 flex items-center justify-between hover:border-primary transition-colors"
+              >
+                <div className="flex items-center space-x-4">
                   <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center">
-                    <span className="text-white font-bold text-lg">
-                      {member.name.charAt(0).toUpperCase()}
+                    <span className="text-white font-bold">
+                      {memberUser?.name?.charAt(0).toUpperCase()}
                     </span>
                   </div>
                   <div>
-                    <h3 className="text-white font-bold">{member.name}</h3>
-                    <p className="text-xs text-primary">
+                    <h3 className="text-white font-bold">{memberUser?.name}</h3>
+                    <p className="text-gray-400 text-sm">{memberUser?.email}</p>
+                    <p className="text-primary text-xs mt-1 font-medium">
                       {member.role === 'team_lead' ? 'Team Lead' : 'Member'}
                     </p>
                   </div>
                 </div>
-                {member.id === user?.id && (
-                  <span className="text-xs bg-primary bg-opacity-20 text-primary px-2 py-1 rounded">
-                    You
-                  </span>
-                )}
-              </div>
 
-              <p className="text-gray-400 text-sm mb-4">{member.email}</p>
-
-              {isTeamLead && member.id !== user?.id && (
-                <button
-                  onClick={() => toggleMemberStatus(member.id, member.status)}
-                  className="flex items-center space-x-2 text-sm text-gray-400 hover:text-white transition-colors"
-                >
-                  {member.status === 'active' ? (
-                    <>
-                      <FiToggleRight className="text-xl text-green-500" />
-                      <span>Active</span>
-                    </>
-                  ) : (
-                    <>
-                      <FiToggleLeft className="text-xl text-gray-500" />
-                      <span>Inactive</span>
-                    </>
+                <div className="flex items-center space-x-4">
+                  {member.user_id === user?.id && (
+                    <span className="text-xs bg-primary bg-opacity-20 text-primary px-3 py-1 rounded">
+                      You
+                    </span>
                   )}
-                </button>
-              )}
-            </div>
-          ))}
+                  {isTeamLeadInActiveOrg && member.user_id !== user?.id && (
+                    <button
+                      onClick={() => handleRemoveMember(member.user_id, memberUser?.name || 'Member')}
+                      className="text-red-400 hover:text-red-500 p-2 rounded-lg hover:bg-dark-hover transition-colors"
+                      title="Remove member"
+                    >
+                      <FiTrash2 />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
         </div>
       ) : (
         <div className="bg-dark-card p-12 rounded-xl border border-gray-700 text-center">
           <div className="w-24 h-24 bg-dark-bg rounded-full flex items-center justify-center mx-auto mb-4">
             <FiUsers className="text-gray-600 text-4xl" />
           </div>
-          <h3 className="text-white text-xl font-bold mb-2">
-            No {activeTab} members
-          </h3>
+          <h3 className="text-white text-xl font-bold mb-2">No Members Yet</h3>
           <p className="text-gray-400">
-            {activeTab === 'active' 
-              ? 'All members are currently inactive.'
-              : 'All members are currently active.'}
+            Invite team members to join your organization. They can sign up and join via the shared organization link.
           </p>
         </div>
       )}
 
-      {/* Add Member Modal */}
+      {/* Delete Member Confirmation Modal */}
       <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title="Add Team Member"
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false)
+          setMemberToDelete(null)
+        }}
+        title="Remove Member"
       >
         <div className="space-y-4">
-          <p className="text-gray-400 text-sm mb-4">
-            To add team members, share the application URL with them. They can sign up with their email and password, and will automatically get the "Member" role. You can then activate or deactivate them from this page.
-          </p>
-          
-          <div className="bg-dark-bg p-4 rounded-lg">
-            <h3 className="text-white font-medium mb-2">How to add team members:</h3>
-            <ol className="text-gray-400 text-sm space-y-2 list-decimal list-inside">
-              <li>Share the application URL with your team member</li>
-              <li>They sign up with their email and password</li>
-              <li>They automatically get "Member" role</li>
-              <li>You can toggle their active/inactive status here</li>
-            </ol>
+          <div className="flex items-center space-x-3 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
+            <FiAlertTriangle className="text-red-400 text-xl flex-shrink-0" />
+            <p className="text-red-300 text-sm">
+              This action cannot be undone. The member will be removed from the organization and their task assignments will be cleared.
+            </p>
           </div>
 
-          <button
-            onClick={() => setIsModalOpen(false)}
-            className="w-full bg-primary hover:bg-primary-dark text-white py-3 rounded-lg font-medium transition-colors"
-          >
-            Got it
-          </button>
+          {memberToDelete && (
+            <div className="p-3 bg-dark-bg rounded-lg">
+              <p className="text-white text-sm">
+                <span className="font-bold">Removing:</span> {memberToDelete.name}
+              </p>
+            </div>
+          )}
+
+          <div className="flex space-x-3">
+            <button
+              onClick={() => {
+                setIsDeleteModalOpen(false)
+                setMemberToDelete(null)
+              }}
+              className="flex-1 bg-dark-bg border border-gray-700 text-white py-3 rounded-lg font-medium hover:border-gray-600 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmRemoveMember}
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2"
+            >
+              <FiTrash2 className="w-4 h-4" />
+              <span>Remove Member</span>
+            </button>
+          </div>
         </div>
       </Modal>
     </div>

@@ -13,7 +13,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
-  const { setUser } = useAuthStore()
+  const { setUser, setMemberships, setOrganizations, setActiveOrg } = useAuthStore()
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -45,7 +45,6 @@ export default function LoginPage() {
               id: data.user.id,
               name,
               email: data.user.email || '',
-              role: 'member',
               status: 'active',
             })
 
@@ -54,7 +53,6 @@ export default function LoginPage() {
               id: data.user.id,
               name,
               email: data.user.email || '',
-              role: 'member',
               status: 'active',
               created_at: new Date().toISOString(),
             }
@@ -77,7 +75,36 @@ export default function LoginPage() {
           return
         }
 
+        // Load user memberships and organizations
+        const { data: membershipData, error: membershipError } = await supabase
+          .from('organization_members')
+          .select('*')
+          .eq('user_id', data.user.id)
+
+        if (membershipError) throw membershipError
+
+        // Load organizations
+        let orgIds = membershipData?.map(m => m.org_id) || []
+        let organizations = []
+        
+        if (orgIds.length > 0) {
+          const { data: orgData, error: orgError } = await supabase
+            .from('organizations')
+            .select('*')
+            .in('id', orgIds)
+
+          if (orgError) throw orgError
+          organizations = orgData || []
+        }
+
+        // Set active org to first membership
+        const activeOrgId = membershipData?.[0]?.org_id || null
+
         setUser(userData)
+        setMemberships(membershipData || [])
+        setOrganizations(organizations)
+        setActiveOrg(activeOrgId)
+
         router.push('/dashboard')
       }
     } catch (err: any) {

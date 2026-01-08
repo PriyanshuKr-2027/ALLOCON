@@ -11,10 +11,11 @@ export default function SignupPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [orgName, setOrgName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
-  const { setUser } = useAuthStore()
+  const { setUser, setMemberships, setOrganizations, setActiveOrg } = useAuthStore()
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -31,44 +32,71 @@ export default function SignupPage() {
       if (authError) throw authError
 
       if (authData.user) {
-        // Try to create user profile - by default, new users are members
+        // Create user profile
         const { error: profileError } = await supabase
           .from('users')
           .insert({
             id: authData.user.id,
             name,
             email,
-            role: 'member',
             status: 'active',
           })
 
-        // Log profile creation error but don't fail signup
         if (profileError && profileError.code !== '23505') {
-          // 23505 is unique constraint violation - user already exists
           console.error('Profile creation error:', profileError)
         }
 
-        // Try to log activity (don't fail if it errors)
+        // Create default organization
+        const { data: orgData, error: orgError } = await supabase
+          .from('organizations')
+          .insert({
+            name: orgName || `${name}'s Organization`,
+            created_by: authData.user.id,
+          })
+          .select()
+          .single()
+
+        if (orgError) throw orgError
+
+        // Add user to organization as team_lead (first user is always team lead)
+        const { data: memberData, error: memberError } = await supabase
+          .from('organization_members')
+          .insert({
+            user_id: authData.user.id,
+            org_id: orgData.id,
+            role: 'team_lead',
+          })
+          .select()
+          .single()
+
+        if (memberError) throw memberError
+
+        // Log activity
         try {
           await supabase.from('activity_logs').insert({
-            action: 'member_added',
+            org_id: orgData.id,
+            action: 'user_joined',
             user_id: authData.user.id,
             user_name: name,
-            details: `${name} signed up with email ${email}`,
+            details: `${name} created organization and signed up`,
           })
         } catch (logError) {
           console.error('Activity log error:', logError)
         }
 
-        // Set user in store and auto-login
+        // Set user state
         setUser({
           id: authData.user.id,
           name,
           email,
-          role: 'member',
           status: 'active',
           created_at: new Date().toISOString(),
         })
+
+        // Set memberships and organizations
+        setMemberships([memberData])
+        setOrganizations([orgData])
+        setActiveOrg(orgData.id)
 
         // Redirect to dashboard
         router.push('/dashboard')
@@ -148,6 +176,21 @@ export default function SignupPage() {
                 />
               </div>
               <p className="text-xs text-gray-500 mt-1">At least 6 characters</p>
+            </div>
+
+            <div>
+              <label className="text-gray-400 text-sm mb-2 block">Organization Name (optional)</label>
+              <div className="relative">
+                <FiCheckSquare className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={orgName}
+                  onChange={(e) => setOrgName(e.target.value)}
+                  className="w-full bg-dark-bg border border-gray-700 text-white px-10 py-3 rounded-lg focus:outline-none focus:border-primary"
+                  placeholder="e.g., Acme Corp"
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">If left empty, will use {name && `${name}'s Organization`}</p>
             </div>
 
             <button

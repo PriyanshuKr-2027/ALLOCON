@@ -6,14 +6,13 @@ import { useAuthStore } from '@/lib/store'
 import { FiActivity } from 'react-icons/fi'
 
 export default function ActivityLogPage() {
-  const { user } = useAuthStore()
+  const { activeOrgId, isTeamLeadInActiveOrg } = useAuthStore()
   const [activities, setActivities] = useState<ActivityLog[]>([])
   const [loading, setLoading] = useState(true)
 
-  const isTeamLead = user?.role === 'team_lead'
-
   useEffect(() => {
-    if (!isTeamLead) {
+    if (!isTeamLeadInActiveOrg || !activeOrgId) {
+      setLoading(false)
       return
     }
 
@@ -21,6 +20,7 @@ export default function ActivityLogPage() {
       const { data } = await supabase
         .from('activity_logs')
         .select('*')
+        .eq('org_id', activeOrgId)
         .order('created_at', { ascending: false })
         .limit(100)
 
@@ -29,9 +29,9 @@ export default function ActivityLogPage() {
     }
 
     fetchActivities()
-  }, [isTeamLead])
+  }, [isTeamLeadInActiveOrg, activeOrgId])
 
-  if (!isTeamLead) {
+  if (!isTeamLeadInActiveOrg) {
     return (
       <div className="p-8">
         <div className="bg-dark-card p-12 rounded-xl border border-gray-700 text-center">
